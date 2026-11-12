@@ -33,11 +33,56 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LEX = os.path.join(HERE, "slop.json")
 
 SENT_RE = re.compile(r"[^.!?\n]+[.!?]*")
-WORD_RE = re.compile(r"[A-Za-z']+")
+WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ']+")
 CONTRACTIONS = re.compile(r"\b\w+'(?:s|t|re|ve|ll|d|m)\b", re.IGNORECASE)
-PRONOUNS = re.compile(r"\b(i|me|my|mine|we|us|our|you|your)\b", re.IGNORECASE)
-NUMBERS = re.compile(r"\b\d[\d,.]*%?\b|\$\d")
-PROPER = re.compile(r"(?<![.!?]\s)(?<!^)\b[A-Z][a-z]{2,}\b", re.MULTILINE)
+# Portuguese has no apostrophe contractions. The spoken equivalent is the
+# informal register: "pra", "tá", "né", "cê". Models write "para", "está".
+PT_INFORMAL = re.compile(
+    r"\b(?:pra|pro|pras|pros|prum|pruma|tá|tô|tava|tavam|tamo|né|cê|cês|vc|vcs|"
+    r"tb|tbm|num|numa|dum|duma|daí|aí|tipo|mano|bora|vamo|ó|olha só|sei lá|"
+    r"a gente|pô|poxa|nossa|caramba|beleza|blz)\b", re.IGNORECASE)
+PRONOUNS = re.compile(r"\b(i|me|my|mine|we|us|our|you|your"
+                      r"|eu|meu|minha|meus|minhas|comigo|nós|nosso|nossa|a gente"
+                      r"|você|vocês|vc|vcs|cê|tu|teu|tua|seu|sua|te|contigo)\b", re.IGNORECASE)
+NUMBERS = re.compile(r"\b\d[\d,.]*%?\b|R?\$\s?\d")
+PROPER = re.compile(r"(?<![.!?]\s)(?<!^)\b[A-ZÀ-Ý][a-zà-ÿ]{2,}\b", re.MULTILINE)
+
+
+# --- language ---------------------------------------------------------------
+# The lexicon holds an English block and a PT-BR block (family "*-ptbr",
+# structure ids "pt-*"). Running the English block on Portuguese turns
+# "crucial" into "important", so each text only gets its own language.
+# Language-neutral structures (emoji, hashtags) run on both.
+PT_HINTS = {"que", "não", "nao", "pra", "você", "voce", "uma", "com", "para",
+            "mais", "isso", "esse", "essa", "muito", "também", "então", "está",
+            "tá", "é", "do", "da", "dos", "das", "no", "na", "em", "eu", "meu",
+            "minha", "seu", "sua", "como", "mas", "foi", "ele", "ela", "os"}
+EN_HINTS = {"the", "and", "you", "your", "that", "this", "with", "for", "is",
+            "are", "was", "it", "of", "to", "in", "my", "but", "not", "have",
+            "what", "just", "they", "be", "on", "at", "i", "it's", "don't"}
+NEUTRAL_STRUCTURES = {"rocket", "hashtag-wall", "emoji-bullets", "as-an-ai"}
+
+
+def detect_lang(text):
+    toks = re.findall(r"[a-zà-ÿ']+", text.lower())
+    pt = sum(t in PT_HINTS for t in toks)
+    en = sum(t in EN_HINTS for t in toks)
+    return "pt" if pt > en else "en"
+
+
+def lex_for(lex, text, lang="auto"):
+    """Copy of the lexicon with only the entries for the text's language."""
+    lang = detect_lang(text) if lang == "auto" else lang
+    is_pt = lambda e: e.get("family", "").endswith("-ptbr")
+    keep = (lambda e: is_pt(e)) if lang == "pt" else (lambda e: not is_pt(e))
+    out = dict(lex)
+    out["words"] = [e for e in lex["words"] if keep(e)]
+    out["phrases"] = [e for e in lex["phrases"] if keep(e)]
+    out["structures"] = [s for s in lex["structures"]
+                         if s["id"] in NEUTRAL_STRUCTURES
+                         or (s["id"].startswith("pt-") == (lang == "pt"))]
+    out["lang"] = lang
+    return out
 
 
 def clamp(n):
@@ -124,7 +169,7 @@ def check_voice(text, lex):
     if len(w) < 25:
         return 50.0, "too short to judge"
     per100 = 100 / len(w)
-    contractions = len(CONTRACTIONS.findall(text)) * per100
+    contractions = (len(CONTRACTIONS.findall(text)) + len(PT_INFORMAL.findall(text))) * per100
     person = len(PRONOUNS.findall(text)) * per100
     tells = 0
     names = []
@@ -154,7 +199,8 @@ def check_voice(text, lex):
 CHECKS = ["BURSTINESS", "SPECIFICITY", "SLOP DENSITY", "FINGERPRINT", "VOICE"]
 
 
-def run(text, lex):
+def run(text, lex, lang="auto"):
+    lex = lex_for(lex, text, lang)
     results = {}
     results["BURSTINESS"] = check_burstiness(text)
     results["SPECIFICITY"] = check_specificity(text)
@@ -195,6 +241,8 @@ def main():
     ap.add_argument("input", nargs="?", default="-", help="file, or - for stdin")
     ap.add_argument("compare", nargs="?", help="second file, to show before/after")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--lang", choices=["auto", "en", "pt"], default="auto",
+                    help="which lexicon block to use (default: detect from the text)")
     ap.add_argument("--lexicon", default=LEX)
     args = ap.parse_args()
 
@@ -207,7 +255,7 @@ def main():
 
     payload = []
     for name, text in targets:
-        results, overall, verdict = run(text, lex)
+        results, overall, verdict = run(text, lex, args.lang)
         payload.append({
             "source": name,
             "checks": {k: {"score": round(v[0], 1), "detail": v[1]} for k, v in results.items()},
@@ -216,11 +264,11 @@ def main():
         })
 
     if args.json:
-        print(json.dumps(payload if args.compare else payload[0], indent=2))
+        print(json.dumps(payload if args.compare else payload[0], indent=2, ensure_ascii=False))
         return
 
     for (name, text), p in zip(targets, payload):
-        results, overall, verdict = run(text, lex)
+        results, overall, verdict = run(text, lex, args.lang)
         render(results, overall, verdict, label=os.path.basename(name) if args.compare else None)
     if args.compare:
         a, b = payload

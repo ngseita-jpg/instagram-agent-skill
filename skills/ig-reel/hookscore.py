@@ -36,14 +36,18 @@ import re
 import statistics
 import sys
 
-WORD_RE = re.compile(r"[A-Za-z0-9$%'’-]+")
+# Letters include accents so "ninguém" and "você" stay one word (PT-BR).
+WORD_RE = re.compile(r"(?:R\$\s?)?[A-Za-zÀ-ÖØ-öø-ÿ0-9$%'’-]+")
 NUMBER_RE = re.compile(
-    r"\$\s?\d[\d,]*(?:\.\d+)?"                       # money, whole
+    r"R?\$\s?\d[\d,.]*(?:,\d+)?"                      # money, US or R$
     r"|\b\d[\d,]*(?:\.\d+)?\s?"                      # a figure, with or
     r"(?:%|k\b|x\b|hrs?\b|hours?\b|mins?\b|minutes?\b"  # without a unit
-    r"|days?\b|weeks?\b|months?\b|years?\b)?",
+    r"|days?\b|weeks?\b|months?\b|years?\b"
+    # PT-BR units, and the gym ones that make a fitness hook concrete
+    r"|mil\b|reais\b|kg\b|quilos?\b|reps?\b|repetições\b|séries\b|dias?\b"
+    r"|semanas?\b|m[eê]s(?:es)?\b|anos?\b|horas?\b|minutos?\b|segundos?\b)?",
     re.IGNORECASE)
-PROPER_RE = re.compile(r"(?<!^)\b[A-Z][a-z]{2,}\b")
+PROPER_RE = re.compile(r"(?<!^)\b[A-ZÀ-Ý][a-zà-ÿ]{2,}\b")
 HASHTAG_RE = re.compile(r"(?:^|\s)#\w+")
 EMOJI_RE = re.compile(r"[\U0001F300-\U0001FAFF☀-➿]")
 
@@ -56,10 +60,18 @@ SPOKEN_NUMBERS = {
     "ten", "eleven", "twelve", "fifteen", "twenty", "thirty", "forty", "fifty",
     "sixty", "seventy", "eighty", "ninety", "hundred", "thousand", "million",
     "billion", "dozen", "half", "twice", "triple",
+    # PT-BR. "um/uma/primeiro" left out for the same reason "one/first" are.
+    "dois", "duas", "três", "tres", "quatro", "cinco", "seis", "sete", "oito",
+    "nove", "dez", "onze", "doze", "quinze", "vinte", "trinta", "quarenta",
+    "cinquenta", "sessenta", "setenta", "oitenta", "noventa", "cem", "cento",
+    "mil", "milhão", "milhao", "milhões", "milhoes", "bilhão", "dúzia",
+    "metade", "dobro", "triplo",
 }
 MONEY_WORDS = {
     "dollars", "dollar", "bucks", "grand", "percent", "cents",
     "millionaire", "billionaire", "revenue", "profit", "salary", "rent",
+    "reais", "real", "conto", "contos", "pila", "pilas", "porcento", "centavos",
+    "milionário", "faturamento", "lucro", "salário", "aluguel", "kg", "quilos",
 }
 
 # Words that put something on the line. A hook with none of these is a
@@ -76,6 +88,20 @@ STAKES = {
     "before", "until", "instead", "but", "except", "unless", "problem",
     "risk", "danger", "warning", "regret", "wish", "should", "shouldn't",
     "still", "already", "only", "without", "versus", "vs", "actually",
+    # PT-BR
+    "pare", "nunca", "errado", "errada", "erro", "erros", "perdi",
+    "perder", "perdendo", "perdeu", "custou", "custa", "quebrei", "falhei",
+    "falhou", "fracasso", "flopou", "flopar", "ninguém", "ninguem", "não",
+    "nao", "nem", "parei", "desisti", "demitido", "apaguei", "apaga", "matou",
+    "mata", "trocou", "troquei", "substituiu", "cortei", "corta", "grátis",
+    "gratis", "paguei", "pagou", "cobrei", "economizei", "proibido", "ilegal",
+    "pior", "odeio", "odiei", "desperdício", "golpe",
+    "mentira", "mentiram", "verdade", "segredo", "escondido", "roubei",
+    "antes", "até", "ate", "invés", "mas", "exceto", "problema", "risco",
+    "perigo", "cuidado", "arrependo", "arrependi", "devia", "deveria",
+    "ainda", "já", "só", "sem", "contra", "parou", "travou", "estagnou",
+    "lesão", "lesionei", "machuquei", "superestimado", "superestimada",
+    "subestimado", "subestimada", "mito", "inútil", "rouba", "roubar",
 }
 
 # Openers that spend the first second saying nothing.
@@ -86,6 +112,14 @@ WEAK_OPENERS = [
     "have you", "did you", "do you", "are you", "in this", "in today",
     "the thing", "a lot", "there is", "there are", "this is", "it is",
     "as a", "when it", "if you've", "you know",
+    # PT-BR
+    "oi", "olá", "ola", "fala", "e aí", "e ai", "salve", "gente", "galera",
+    "pessoal", "bom dia", "boa tarde", "boa noite", "então", "entao", "tipo",
+    "bom", "enfim", "hoje", "basicamente", "sinceramente", "olha", "escuta",
+    "vou", "eu vou", "eu queria", "queria", "vamos", "bora", "um dos",
+    "uma das", "você sabia", "vocês sabiam", "já pensou", "neste", "nesse",
+    "no vídeo", "no video", "a coisa", "muita", "muito", "existe", "isso é",
+    "esse é", "essa é", "é o", "é a", "como um", "como uma", "sabe",
 ]
 
 # Imperatives that earn the front position.
@@ -93,6 +127,11 @@ IMPERATIVES = {
     "stop", "steal", "copy", "delete", "try", "watch", "read", "save",
     "use", "build", "make", "write", "send", "take", "start", "quit",
     "never", "always", "don't", "dont", "do", "put", "run", "check",
+    # PT-BR
+    "para", "pare", "rouba", "copia", "apaga", "tenta", "testa", "assiste",
+    "olha", "lê", "salva", "usa", "faz", "faça", "escreve", "manda", "pega",
+    "começa", "comece", "larga", "nunca", "sempre", "não", "nao", "coloca",
+    "treina", "come", "corta", "tira", "troca",
 }
 
 DEALBREAKERS = [
@@ -102,6 +141,13 @@ DEALBREAKERS = [
      "Video preamble. Delete it and open on the payoff."),
     (re.compile(r"(?i)^\s*(?:hey |hi |what'?s up |welcome )"),
      "Greeting. Nobody came to the feed to be greeted."),
+    # PT-BR
+    (re.compile(r"(?i)^\s*(?:para de rolar|pare de rolar|não passa|nao passa|espera,? não)"),
+     "Abre com \"para de rolar\". Pedir atenção prova que você não conquistou ela."),
+    (re.compile(r"(?i)\b(?:n(?:o|esse|este) (?:vídeo|video|reels?) (?:de hoje )?(?:eu )?(?:vou|vamos)|hoje eu vou (?:te )?(?:mostrar|ensinar|falar)|vou te mostrar como|no vídeo de hoje|no video de hoje)\b"),
+     "Preâmbulo de vídeo. Apaga e abre direto no resultado."),
+    (re.compile(r"(?i)^\s*(?:oi|olá|ola|fala|e a[ií]|salve|bom dia|boa tarde|boa noite)\b[ ,!]*(?:gente|galera|pessoal|turma|família|familia|meu povo)?"),
+     "Saudação. Ninguém abriu o feed pra ser cumprimentado."),
     (HASHTAG_RE,
      "Hashtag in the hook. Hashtags belong at the bottom of the caption, if anywhere."),
     (EMOJI_RE,
@@ -201,14 +247,25 @@ def check_address(text):
     """Aimed at one viewer, or floating in the air."""
     low = text.lower()
     w = [x.lower().strip("'’") for x in words(text)]
-    if re.search(r"\b(you|your|you're|youre|yourself)\b", low):
+    if re.search(r"\b(you|your|you're|youre|yourself"
+                 r"|você|voce|vc|cê|ce|tu|teu|tua|seu|sua|seus|suas|contigo|te)\b", low):
         return 100.0, "speaks to the viewer"
     if w and w[0] in IMPERATIVES:
         return 90.0, f"imperative opener (\"{w[0]}\")"
-    if re.search(r"\b(i|my|me|we|our)\b", low):
+    if re.search(r"\b(i|my|me|we|our|eu|meu|minha|meus|minhas|nós|nos|nosso|nossa|a gente|comigo)\b", low):
         return 70.0, "first person, no viewer named"
+    # Portuguese drops the pronoun: "Perdi 12 kg" is first person with no "eu".
+    if any(x in PT_FIRST_PERSON or (len(x) > 4 and x.endswith("ei")) for x in w):
+        return 70.0, "first person (verb), no viewer named"
     return 35.0, "third person, nobody in the room"
 
+
+PT_FIRST_PERSON = {
+    "perdi", "fiz", "fui", "tive", "vi", "comi", "bebi", "consegui", "descobri",
+    "aprendi", "sou", "estou", "tô", "to", "era", "estava", "tinha", "vivi",
+    "corri", "subi", "caí", "cai", "dormi", "senti", "pus", "quis", "pude",
+    "sei", "faço", "cobro", "ganho",  # not "como"/"treino": usually not verbs
+}
 
 CHECKS = ["LENGTH", "SPECIFICITY", "STAKES", "FRONTLOAD", "ADDRESS"]
 

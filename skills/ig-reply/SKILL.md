@@ -9,6 +9,23 @@ description: >-
 
 # ig-reply
 
+## Idioma (PT-BR)
+
+Por padrão, escreva em **português brasileiro**, a menos que o usuário peça
+outro idioma ou que o `voice.md` diga o contrário. Isso vale pra tudo que sai
+pronto pra copiar: roteiro, texto na tela, legenda, comentário, DM, story.
+As explicações pro usuário também vão em português.
+
+- No roteiro falado, use o registro falado ("pra", "tá", "cê", "a gente") se
+  o `voice.md` permitir. "Para", "está" e "nós" num roteiro soam lidos.
+- Valores em R$ ("R$ 18 mil", "R$ 400"), números do jeito que se fala.
+- Os scripts Python detectam o idioma sozinhos (`--lang auto`). Se o texto
+  vier misturado, force com `--lang pt`.
+- Em `hooks.json`, cada fórmula tem `example_ptbr`. Use esse exemplo como
+  referência de tom em vez do exemplo em inglês.
+- Nada de tradução literal de clichê gringo ("mergulhe fundo", "eleve o
+  nível", "virada de chave"): o `ig-human` marca isso como slop.
+
 The comment thread under your own post is where reach is decided. Every reply
 is another interaction on the post, replies arriving in the first hour do most
 of the work, and on Instagram a reply can also be a Reel, which is the single

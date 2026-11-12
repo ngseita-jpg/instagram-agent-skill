@@ -15,6 +15,9 @@ the words out loud. A line you would never say is not a draft, it is a retake.
 
 ## Who I am
 
+- **Idioma / Language:** português (BR); as skills escrevem em PT-BR por padrão
+- **Registro falado:** ("pra/tá/cê" ok? gírias que eu uso? palavrão?)
+
 - **Name:**
 - **Handle:**
 - **What I do, in one sentence:**

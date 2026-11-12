@@ -40,6 +40,43 @@ URL_RE = re.compile(r"https?://\S+|www\.\S+|\S+@\S+\.\S+")
 SENT_RE = re.compile(r"[^.!?\n]+[.!?]*")
 
 
+# --- language ---------------------------------------------------------------
+# The lexicon holds an English block and a PT-BR block (family "*-ptbr",
+# structure ids "pt-*"). Running the English block on Portuguese turns
+# "crucial" into "important", so each text only gets its own language.
+# Language-neutral structures (emoji, hashtags) run on both.
+PT_HINTS = {"que", "não", "nao", "pra", "você", "voce", "uma", "com", "para",
+            "mais", "isso", "esse", "essa", "muito", "também", "então", "está",
+            "tá", "é", "do", "da", "dos", "das", "no", "na", "em", "eu", "meu",
+            "minha", "seu", "sua", "como", "mas", "foi", "ele", "ela", "os"}
+EN_HINTS = {"the", "and", "you", "your", "that", "this", "with", "for", "is",
+            "are", "was", "it", "of", "to", "in", "my", "but", "not", "have",
+            "what", "just", "they", "be", "on", "at", "i", "it's", "don't"}
+NEUTRAL_STRUCTURES = {"rocket", "hashtag-wall", "emoji-bullets", "as-an-ai"}
+
+
+def detect_lang(text):
+    toks = re.findall(r"[a-zà-ÿ']+", text.lower())
+    pt = sum(t in PT_HINTS for t in toks)
+    en = sum(t in EN_HINTS for t in toks)
+    return "pt" if pt > en else "en"
+
+
+def lex_for(lex, text, lang="auto"):
+    """Copy of the lexicon with only the entries for the text's language."""
+    lang = detect_lang(text) if lang == "auto" else lang
+    is_pt = lambda e: e.get("family", "").endswith("-ptbr")
+    keep = (lambda e: is_pt(e)) if lang == "pt" else (lambda e: not is_pt(e))
+    out = dict(lex)
+    out["words"] = [e for e in lex["words"] if keep(e)]
+    out["phrases"] = [e for e in lex["phrases"] if keep(e)]
+    out["structures"] = [s for s in lex["structures"]
+                         if s["id"] in NEUTRAL_STRUCTURES
+                         or (s["id"].startswith("pt-") == (lang == "pt"))]
+    out["lang"] = lang
+    return out
+
+
 def load_lexicon(path=LEX):
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
@@ -145,7 +182,8 @@ def pass_lexical(text, lex):
     # punctuation behind ("system. ." or a line that now opens on a comma),
     # and that reads worse than the slop did.
     text = re.sub(r"[ \t]{2,}", " ", text)
-    text = re.sub(r"(?m)^[ \t]*(?:[,.;:]+[ \t]*)+", "", text)
+    text = re.sub(r"(?m)^[ \t]*(?:[,.;:!?]+[ \t]*)+", "", text)
+    text = re.sub(r"\b([Ee]), ", r"\1 ", text)         # "Além disso, X" -> "E, X" -> "E X"
     text = re.sub(r"(?m)^[ \t](?=\S)", "", text)       # one space left by a deletion.
                                                       # Deeper indents are deliberate.
     text = re.sub(r"\s+([,.;:!?])", r"\1", text)
@@ -159,7 +197,7 @@ def pass_lexical(text, lex):
     text = re.sub(r"\n{3,}", "\n\n", text)
     # An em dash that became a comma, followed by a sentence connective, leaves
     # a splice ("is important, also, it's proof"). Promote it to a full stop.
-    text = re.sub(r",\s*(also|so|still|basically|in the end)\s*,\s*",
+    text = re.sub(r",\s*(also|so|still|basically|in the end|também|então|ainda|no fim)\s*,\s*",
                   lambda m: ". " + m.group(1)[0].upper() + m.group(1)[1:] + ", ", text)
     return text, hits
 
@@ -196,10 +234,10 @@ def restore_capitals(original, text):
     a deliberately lower-case voice is a style, not an artefact, and shouting
     over it would be exactly the kind of thing this script exists to stop.
     """
-    starts = re.findall(r"(?:^|[.!?]\s+|\n)\s*([A-Za-z])", original)
+    starts = re.findall(r"(?:^|[.!?]\s+|\n)\s*([A-Za-zÀ-ÖØ-öø-ÿ])", original)
     if not starts or sum(1 for c in starts if c.isupper()) * 2 < len(starts):
         return text
-    return re.sub(r"(?:^|(?<=[.!?] )|(?<=[.!?]\n)|(?<=\n))\s*([a-z])",
+    return re.sub(r"(?:^|(?<=[.!?] )|(?<=[.!?]\n)|(?<=\n))\s*([a-zà-ÿ])",
                   lambda m: m.group(0)[:-1] + m.group(1).upper(), text)
 
 
@@ -259,11 +297,13 @@ def main():
     ap.add_argument("-o", "--out", help="write cleaned text here instead of stdout")
     ap.add_argument("--report", action="store_true", help="print what changed, to stderr")
     ap.add_argument("--json", action="store_true", help="emit {text, report} as JSON")
+    ap.add_argument("--lang", choices=["auto", "en", "pt"], default="auto",
+                    help="which lexicon block to use (default: detect from the text)")
     ap.add_argument("--lexicon", default=LEX, help="path to slop.json")
     args = ap.parse_args()
 
     raw = sys.stdin.read() if args.input == "-" else open(args.input, encoding="utf-8").read()
-    lex = load_lexicon(args.lexicon)
+    lex = lex_for(load_lexicon(args.lexicon), raw, args.lang)
     clean, report = humanize(raw, lex)
 
     if args.json:

@@ -17,6 +17,27 @@ see it.
 
 **Nothing gets posted until you say yes.** These skills write. You post.
 
+## Versão PT-BR (este fork)
+
+Este fork adapta o pacote pro português brasileiro, sem quebrar o inglês:
+
+- **As 13 skills escrevem em PT-BR por padrão** (bloco "Idioma" em cada `SKILL.md`).
+- **`hookscore.py`**: acentos, R$, kg/reps/séries, números por extenso,
+  palavras de tensão, aberturas fracas ("oi gente", "bom dia", "no vídeo de
+  hoje") e pronome oculto ("Perdi 12 kg" conta como primeira pessoa).
+- **`beats.py`**: stopwords PT pro detector de loop, R$ como marcador concreto.
+- **`caption.py`**: CTAs em português ("comenta PROTEÍNA", "me chama no
+  direct", "link na bio", "salva esse post"), hashtags com acento, `#fy` e
+  cia. como genéricas.
+- **`slop.json`**: bloco PT-BR com ~100 termos ("potencializar", "alavancar",
+  "virada de chave", "no mundo acelerado de hoje", "marca aquele amigo que")
+  e 11 estruturas ("Não é sobre X, é sobre Y", tríade "X, Y e Z.").
+- **`humanize.py` / `detect.py`**: detectam o idioma (`--lang auto|en|pt`) e
+  só aplicam o léxico daquele idioma. O check de VOICE conta o registro
+  falado ("pra", "tá", "né", "cê") no lugar das contrações do inglês.
+- **`hooks.json`**: as 26 fórmulas ganharam `example_ptbr` e regex em
+  português. O classificador reconhece 26/26 exemplos PT.
+
 ## Install
 
 Paste this into Claude:
